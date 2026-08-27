@@ -187,12 +187,18 @@ async def handle_publish_request(request):
     return web.json_response({"success": True, "message": "EO parties published successfully"})
 
 
+async def health_check(request):
+    return web.json_response({"ok": True})
+
+
 async def start_web_server():
     global _web_runner
 
     port = int(os.environ.get("PORT", "8000"))
 
     app = web.Application()
+    app.router.add_get("/", health_check)
+    app.router.add_get("/health", health_check)
     app.router.add_post("/api/eo/publish", handle_publish_request)
     _web_runner = web.AppRunner(app)
     await _web_runner.setup()
