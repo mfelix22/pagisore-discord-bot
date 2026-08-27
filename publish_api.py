@@ -1,4 +1,5 @@
 import asyncio
+import os
 from aiohttp import web
 from datetime import datetime
 
@@ -189,13 +190,15 @@ async def handle_publish_request(request):
 async def start_web_server():
     global _web_runner
 
+    port = int(os.environ.get("PORT", "8000"))
+
     app = web.Application()
     app.router.add_post("/api/eo/publish", handle_publish_request)
     _web_runner = web.AppRunner(app)
     await _web_runner.setup()
-    site = web.TCPSite(_web_runner, "0.0.0.0", 8000)
+    site = web.TCPSite(_web_runner, "0.0.0.0", port)
     await site.start()
-    print("PAGISORE bot HTTP server started on http://0.0.0.0:8000")
+    print(f"PAGISORE bot HTTP server started on http://0.0.0.0:{port}")
 
     try:
         stop_event = asyncio.Event()
