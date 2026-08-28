@@ -37,6 +37,9 @@ guild = discord.Object(id=int(GUILD_ID))
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 intents = discord.Intents.default()
+# Required to fetch all guild members for /syncdiscord.
+# Also enable "Server Members Intent" in the Discord bot developer portal.
+intents.members = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
@@ -625,6 +628,111 @@ async def attendance_list(interaction: discord.Interaction, event_name: str):
             "❌ Could not load attendance list.",
             ephemeral=True
         )
+
+
+@tree.command(
+    name="syncdiscord",
+    description="Sync Discord user IDs to member IGNs (officer only)"
+)
+@app_commands.describe(dry_run="Show matches without updating")
+async def syncdiscord(interaction: discord.Interaction, dry_run: bool = False):
+    if not is_officer(interaction.user):
+        await interaction.response.send_message(
+            "❌ You need Manage Server or Administrator permission.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    try:
+        guild_obj = client.get_guild(int(GUILD_ID))
+        if not guild_obj:
+            guild_obj = await client.fetch_guild(int(GUILD_ID))
+    except Exception as error:
+        await interaction.followup.send(
+            f"❌ Could not find Discord guild: {error}",
+            ephemeral=True
+        )
+        return
+
+    discord_members = []
+    try:
+        async for m in guild_obj.fetch_members(limit=None):
+            discord_members.append(m)
+    except Exception as error:
+        await interaction.followup.send(
+            f"❌ Could not fetch Discord members. Make sure Server Members Intent is enabled: {error}",
+            ephemeral=True
+        )
+        return
+
+    try:
+        response = await aexecute(
+            supabase.table("members").select("id, ign, discord_id")
+        )
+        db_members = response.data or []
+    except Exception as error:
+        await interaction.followup.send(
+            f"❌ Could not load members from Supabase: {error}",
+            ephemeral=True
+        )
+        return
+
+    db_by_ign = {m["ign"].strip().lower(): m for m in db_members}
+
+    matched = []
+    not_found = []
+    skipped = []
+    failed = []
+
+    for d in discord_members:
+        name = (d.nick or d.display_name or "").strip()
+        if not name:
+            continue
+
+        dbm = db_by_ign.get(name.lower())
+        if not dbm:
+            not_found.append(name)
+            continue
+
+        if dbm.get("discord_id") == str(d.id):
+            skipped.append(name)
+            continue
+
+        matched.append({"ign": dbm["ign"], "discord_id": str(d.id)})
+
+        if dry_run:
+            continue
+
+        try:
+            await aexecute(
+                supabase
+                .table("members")
+                .update({"discord_id": str(d.id)})
+                .eq("id", dbm["id"])
+            )
+        except Exception as error:
+            print(f"Failed to update {dbm['ign']}: {error}")
+            failed.append(name)
+
+    summary = (
+        f"{'🔍 Dry run — no changes made' if dry_run else '✅ Discord IDs synced'}.\n"
+        f"Matched/updated: {len(matched) - (0 if dry_run else len(failed))}\n"
+        f"Not found in dashboard: {len(not_found)}\n"
+        f"Already up to date: {len(skipped)}"
+    )
+    if not dry_run and failed:
+        summary += f"\nFailed to update: {len(failed)}"
+
+    # Limit output to avoid Discord message cap
+    if not_found:
+        preview = ", ".join(not_found[:10])
+        if len(not_found) > 10:
+            preview += f", +{len(not_found) - 10} more"
+        summary += f"\nNot found examples: {preview}"
+
+    await interaction.followup.send(summary, ephemeral=True)
 
 
 @tasks.loop(time=CRON_UTC)
