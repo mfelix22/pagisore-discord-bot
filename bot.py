@@ -46,9 +46,9 @@ tree = app_commands.CommandTree(client)
 publish_api.init(client, supabase, EO_PARTY_CHANNEL_ID, PAGISORE_BOT_API_SECRET)
 
 WIB = timezone(timedelta(hours=7))
-EVENT_TIME = time(23, 59, tzinfo=WIB)  # temporary test time, set back to time(23, 59) later
+EVENT_TIME = time(19, 55, tzinfo=WIB)  # temporary test time, set back to time(23, 59) later
 # EVENT_TIME = time(19, 55, tzinfo=WIB)
-CLOSE_OFFSET = timedelta(minutes=1)  # temporary test, set back to timedelta(hours=3)(minutes=1) later
+CLOSE_OFFSET = timedelta(hours=3)  # temporary test, set back to timedelta(hours=3)(minutes=1) later
 CRON_UTC = time(23, 0, tzinfo=timezone.utc)  # 06:00 WIB
 
 
