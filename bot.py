@@ -370,7 +370,7 @@ class DeclineReasonModal(discord.ui.Modal, title="Alasan tidak hadir"):
             )
 
 
-async def create_attendance_post(channel, event_name):
+async def create_attendance_post(channel, event_name, allow_existing=False):
     now_wib = datetime.now(WIB)
     event_date_wib = now_wib.date()
     event_dt_wib = datetime.combine(event_date_wib, EVENT_TIME, tzinfo=WIB)
@@ -387,22 +387,41 @@ async def create_attendance_post(channel, event_name):
         .eq("event_date", event_date_wib.isoformat())
     )
 
+    event_time = EVENT_TIME.replace(tzinfo=None).isoformat()
+    attendance_open_at = to_utc(now_wib).isoformat()
+    attendance_close_at = to_utc(close_wib).isoformat()
+
     if existing.data:
-        return "exists"
+        if not allow_existing:
+            return "exists"
 
-    event_data = {
-        "name": event_name,
-        "event_type": "attendance",
-        "event_date": event_date_wib.isoformat(),
-        "event_time": EVENT_TIME.replace(tzinfo=None).isoformat(),
-        "attendance_open_at": to_utc(now_wib).isoformat(),
-        "attendance_close_at": to_utc(close_wib).isoformat(),
-        "created_at": to_utc(now_wib).isoformat(),
-    }
+        event_id = existing.data[0]["id"]
+        update_response = await aexecute(
+            supabase
+            .table("events")
+            .update({
+                "event_time": event_time,
+                "attendance_open_at": attendance_open_at,
+                "attendance_close_at": attendance_close_at,
+            })
+            .eq("id", event_id)
+            .select("id,name,event_date,event_time,attendance_close_at")
+        )
+        event_row = update_response.data[0]
+    else:
+        event_data = {
+            "name": event_name,
+            "event_type": "attendance",
+            "event_date": event_date_wib.isoformat(),
+            "event_time": event_time,
+            "attendance_open_at": attendance_open_at,
+            "attendance_close_at": attendance_close_at,
+            "created_at": to_utc(now_wib).isoformat(),
+        }
 
-    insert_response = await aexecute(supabase.table("events").insert(event_data))
-    event_row = insert_response.data[0]
-    event_id = event_row["id"]
+        insert_response = await aexecute(supabase.table("events").insert(event_data))
+        event_row = insert_response.data[0]
+        event_id = event_row["id"]
 
     view = AttendanceView(event_id)
     client.add_view(view)
@@ -767,7 +786,7 @@ async def auto_attendance():
         return
 
     try:
-        result = await create_attendance_post(channel, event_name)
+        result = await create_attendance_post(channel, event_name, allow_existing=True)
 
         if result == "closed":
             print(f"Auto attendance skipped for {event_name}: already closed")
