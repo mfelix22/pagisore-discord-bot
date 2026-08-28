@@ -68,6 +68,18 @@ async def aexecute(query):
         return await asyncio.to_thread(query.execute)
 
 
+async def get_member_id(discord_id: str):
+    try:
+        response = await aexecute(
+            supabase.table("members").select("id").eq("discord_id", discord_id).limit(1)
+        )
+        if response.data:
+            return response.data[0]["id"]
+    except Exception as error:
+        print(f"Failed to resolve member_id for discord_id {discord_id}: {error}")
+    return None
+
+
 def parse_iso_to_wib(value):
     if not value:
         return None
@@ -204,12 +216,14 @@ class AttendanceButton(discord.ui.Button):
             discord_id = str(interaction.user.id)
             username = interaction.user.display_name
 
+            member_id = await get_member_id(discord_id)
+
             await aexecute(
                 supabase.table("event_attendance").upsert({
                     "event_id": self.event_id,
                     "discord_user_id": discord_id,
                     "discord_username": username,
-                    "member_id": None,
+                    "member_id": member_id,
                     "status": self.status,
                     "responded_at": to_utc(datetime.now(WIB)).isoformat(),
                 }, on_conflict="event_id,discord_user_id")
@@ -311,12 +325,14 @@ class DeclineReasonModal(discord.ui.Modal, title="Alasan tidak hadir"):
             username = interaction.user.display_name
             reason = self.reason.value or None
 
+            member_id = await get_member_id(discord_id)
+
             await aexecute(
                 supabase.table("event_attendance").upsert({
                     "event_id": self.event_id,
                     "discord_user_id": discord_id,
                     "discord_username": username,
-                    "member_id": None,
+                    "member_id": member_id,
                     "status": "tidak_hadir",
                     "reason": reason,
                     "responded_at": to_utc(datetime.now(WIB)).isoformat(),
