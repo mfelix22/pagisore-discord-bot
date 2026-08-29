@@ -431,17 +431,17 @@ async def create_attendance_post(channel, event_name, allow_existing=False):
     attendance_channel = f"<#{ATTENDANCE_CHANNEL_ID}>" if ATTENDANCE_CHANNEL_ID else "absensi-guild-event"
     if event_name == "Emperium Overrun":
         content = (
-            "hi ges (IZIIIIIN @everyone ) ini list party untuk EO malam ini yak,\n"
-            f"kalau tidak bisa ikut bisa kabarin di {attendance_channel}\n"
-            "NOTE: masih ada kemungkinan berubah ya please tetep cek ingame sebelum mulai EO nanti\n\n"
-            "terimakasih banyak"
+            "Halo semuanya (IZINNYA YA @everyone ) ini list party buat Emperium Overrun malam ini,\n"
+            f"kalo gak bisa ikut tolong kabarin di {attendance_channel}\n"
+            "NOTE: slot masih bisa berubah, jangan lupa cek in game sebelum EO dimulai\n\n"
+            "thankyouu"
         )
     else:
         content = (
-            "hi ges (IZIIIIIN @everyone ) ini list party untuk GL malam ini yak,\n"
-            f"kalau tidak bisa ikut bisa kabarin di {attendance_channel}\n"
-            "NOTE: masih ada kemungkinan berubah ya please tetep cek ingame sebelum mulai GL nanti\n\n"
-            "terimakasih banyak"
+            "Halo semuanya (IZINNYA YA @everyone ) ini list party buat Guild League malam ini,\n"
+            f"kalo gak bisa ikut tolong kabarin di {attendance_channel}\n"
+            "NOTE: slot masih bisa berubah, jangan lupa cek in game sebelum GL dimulai\n\n"
+            "thankyouu"
         )
 
     await channel.send(
@@ -483,7 +483,7 @@ async def members(interaction: discord.Interaction):
         response = (
             supabase
             .table("members")
-            .select("ign")
+            .select("ign, job")
             .order("ign")
             .execute()
         )
@@ -499,7 +499,8 @@ async def members(interaction: discord.Interaction):
         ]
 
         for index, row in enumerate(rows, start=1):
-            lines.append(f"{index}. {row['ign']}")
+            job = row.get("job") or "?"
+            lines.append(f"{index}. {row['ign']} ({job})")
 
         await interaction.followup.send("\n".join(lines))
 
