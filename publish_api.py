@@ -46,7 +46,7 @@ def build_party_line(party, party_members, members):
         name = get_member_name(members, slot["member_id"])
         prefix = "👑 " if slot["slot_number"] == 1 else ""
         names.append(f"{prefix}{name}")
-    return f"**Party {party['party_number']}** — {', '.join(names)}"
+    return f"> **Party {party['party_number']}** — {', '.join(names)}"
 
 
 def build_eo_message_sections(event, time_groups, parties, party_members, members):
