@@ -172,7 +172,6 @@ def build_attendance_embed(event, attendance_rows):
 
     hadir = [r for r in attendance_rows if r["status"] == "hadir"]
     tidak = [r for r in attendance_rows if r["status"] == "tidak_hadir"]
-    tentative = [r for r in attendance_rows if r["status"] == "tentative"]
 
     embed = discord.Embed(
         title=title,
@@ -202,7 +201,6 @@ def build_attendance_embed(event, attendance_rows):
         return "\n".join(lines)
 
     embed.add_field(name=f"✅ Hadir ({len(hadir)})", value=names(hadir), inline=True)
-    embed.add_field(name=f"🤔 Tentative ({len(tentative)})", value=names(tentative), inline=True)
     embed.add_field(name=f"❌ Tidak Hadir ({len(tidak)})", value=names(tidak, show_reason=True), inline=True)
 
     return embed
@@ -326,7 +324,6 @@ class AttendanceView(discord.ui.View):
         super().__init__(timeout=None)
         self.event_id = event_id
         self.add_item(AttendanceButton(event_id, "hadir", "✅ Hadir", discord.ButtonStyle.green))
-        self.add_item(AttendanceButton(event_id, "tentative", "🤔 Tentative", discord.ButtonStyle.gray))
         self.add_item(AttendanceButton(event_id, "tidak_hadir", "❌ Tidak Hadir", discord.ButtonStyle.red))
         self.add_item(IzinOrangLainButton(event_id))
 
