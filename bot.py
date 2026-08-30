@@ -171,7 +171,7 @@ def build_attendance_embed(event, attendance_rows):
     close_text = format_wib_time(close_wib.time()) if close_wib else "?"
 
     hadir = [r for r in attendance_rows if r["status"] == "hadir"]
-    tidak = [r for r in attendance_rows if r["status"] == "tidak_hadir"]
+    izin = [r for r in attendance_rows if r["status"] == "izin"]
 
     embed = discord.Embed(
         title=title,
@@ -201,7 +201,7 @@ def build_attendance_embed(event, attendance_rows):
         return "\n".join(lines)
 
     embed.add_field(name=f"✅ Hadir ({len(hadir)})", value=names(hadir), inline=True)
-    embed.add_field(name=f"❌ Izin ({len(tidak)})", value=names(tidak, show_reason=True), inline=True)
+    embed.add_field(name=f"📝 Izin ({len(izin)})", value=names(izin, show_reason=True), inline=True)
 
     return embed
 
@@ -226,9 +226,9 @@ class AttendanceButton(discord.ui.Button):
         self.status = status
 
     async def callback(self, interaction: discord.Interaction):
-        if self.status == "tidak_hadir":
+        if self.status == "izin":
             await interaction.response.send_modal(
-                DeclineReasonModal(
+                IzinReasonModal(
                     event_id=self.event_id,
                     message=interaction.message,
                 )
@@ -303,7 +303,8 @@ class AttendanceButton(discord.ui.Button):
 
             status_display = {
                 "hadir": "Hadir",
-                "tidak_hadir": "Izin",
+                "izin": "Izin",
+                "tidak_hadir": "Tidak Hadir",
                 "tentative": "Tentative",
             }.get(self.status, self.status)
             await interaction.followup.send(
@@ -324,13 +325,13 @@ class AttendanceView(discord.ui.View):
         super().__init__(timeout=None)
         self.event_id = event_id
         self.add_item(AttendanceButton(event_id, "hadir", "✅ Hadir", discord.ButtonStyle.green))
-        self.add_item(AttendanceButton(event_id, "tidak_hadir", "❌ Izin", discord.ButtonStyle.red))
+        self.add_item(AttendanceButton(event_id, "izin", "📝 Izin", discord.ButtonStyle.blurple))
         self.add_item(IzinOrangLainButton(event_id))
 
 
-class DeclineReasonModal(discord.ui.Modal, title="Alasan izin"):
+class IzinReasonModal(discord.ui.Modal, title="Alasan izin"):
     reason = discord.ui.TextInput(
-        label="Kenapa kamu tidak bisa hadir?",
+        label="Alasan izin (opsional)",
         style=discord.TextStyle.short,
         max_length=100,
         required=False,
@@ -383,7 +384,7 @@ class DeclineReasonModal(discord.ui.Modal, title="Alasan izin"):
                     "discord_user_id": discord_id,
                     "discord_username": username,
                     "member_id": member_id,
-                    "status": "tidak_hadir",
+                    "status": "izin",
                     "reason": reason,
                     "responded_at": to_utc(datetime.now(WIB)).isoformat(),
                 }, on_conflict="event_id,discord_user_id")
@@ -718,7 +719,7 @@ class IzinOrangLainButton(discord.ui.Button):
         super().__init__(
             label="🙏 Izinin orang lain",
             style=discord.ButtonStyle.blurple,
-            custom_id=f"pagisore_attendance_izin_{event_id}"
+            custom_id=f"pagisore_attendance_izin_orang_{event_id}"
         )
         self.event_id = event_id
 
@@ -972,6 +973,7 @@ async def attendance_list(interaction: discord.Interaction, event_name: str):
         rows = attendance_response.data
 
         hadir = [row for row in rows if row["status"] == "hadir"]
+        izin = [row for row in rows if row["status"] == "izin"]
         tidak = [row for row in rows if row["status"] == "tidak_hadir"]
         tentative = [row for row in rows if row["status"] == "tentative"]
 
@@ -990,13 +992,14 @@ async def attendance_list(interaction: discord.Interaction, event_name: str):
             lines.append(f"- {username}")
 
         lines.append("")
-        lines.append(f"🤔 Tentative ({len(tentative)})")
-        for row in tentative:
+        lines.append(f"📝 Izin ({len(izin)})")
+        for row in izin:
             username = row["discord_username"] or "Unknown"
-            lines.append(f"- {username}")
+            reason = row.get("reason")
+            lines.append(f"- {username}{f' — {reason}' if reason else ''}")
 
         lines.append("")
-        lines.append(f"❌ Izin ({len(tidak)})")
+        lines.append(f"❌ Tidak Hadir ({len(tidak)})")
         for row in tidak:
             username = row["discord_username"] or "Unknown"
             lines.append(f"- {username}")
