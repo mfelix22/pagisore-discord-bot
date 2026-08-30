@@ -420,14 +420,7 @@ class DeclineReasonModal(discord.ui.Modal, title="Alasan tidak hadir"):
             )
 
 
-class IzinOrangLainModal(discord.ui.Modal, title="Izin orang lain tidak hadir"):
-    target_ign = discord.ui.TextInput(
-        label="IGN teman yang tidak bisa hadir",
-        style=discord.TextStyle.short,
-        max_length=100,
-        required=True,
-        placeholder="contoh: Aime",
-    )
+class IzinOrangLainReasonModal(discord.ui.Modal, title="Izin orang lain tidak hadir"):
     reason = discord.ui.TextInput(
         label="Alasan tidak hadir",
         style=discord.TextStyle.short,
@@ -436,9 +429,10 @@ class IzinOrangLainModal(discord.ui.Modal, title="Izin orang lain tidak hadir"):
         placeholder="contoh: kereta/izin",
     )
 
-    def __init__(self, event_id: int, message: discord.Message):
+    def __init__(self, event_id: int, member_id: int, message: discord.Message):
         super().__init__()
         self.event_id = event_id
+        self.member_id = member_id
         self.message = message
 
     async def on_submit(self, interaction: discord.Interaction):
@@ -470,15 +464,22 @@ class IzinOrangLainModal(discord.ui.Modal, title="Izin orang lain tidak hadir"):
                 )
                 return
 
-            target = await get_member_by_ign(str(self.target_ign.value))
+            target_response = await aexecute(
+                supabase
+                .table("members")
+                .select("id,ign,discord_id")
+                .eq("id", self.member_id)
+                .limit(1)
+            )
 
-            if not target:
+            if not target_response.data:
                 await interaction.followup.send(
-                    "❌ Member not found. Cek lagi IGN-nya.",
+                    "❌ Member not found.",
                     ephemeral=True
                 )
                 return
 
+            target = target_response.data[0]
             target_id = target["id"]
             target_discord_id = target.get("discord_id")
             # Use the real Discord ID as the key if available; otherwise a synthetic key.
@@ -531,6 +532,28 @@ class IzinOrangLainModal(discord.ui.Modal, title="Izin orang lain tidak hadir"):
             )
 
 
+class IzinMemberSelect(discord.ui.Select):
+    def __init__(self, event_id: int, attendance_message: discord.Message, options: list):
+        super().__init__(
+            placeholder="Pilih teman yang tidak bisa hadir",
+            min_values=1,
+            max_values=1,
+            options=options,
+            custom_id=f"pagisore_izin_select_{event_id}"
+        )
+        self.event_id = event_id
+        self.attendance_message = attendance_message
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(
+            IzinOrangLainReasonModal(
+                event_id=self.event_id,
+                member_id=int(self.values[0]),
+                message=self.attendance_message,
+            )
+        )
+
+
 class IzinOrangLainButton(discord.ui.Button):
     def __init__(self, event_id: int):
         super().__init__(
@@ -541,12 +564,55 @@ class IzinOrangLainButton(discord.ui.Button):
         self.event_id = event_id
 
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(
-            IzinOrangLainModal(
-                event_id=self.event_id,
-                message=interaction.message,
+        try:
+            members_response = await aexecute(
+                supabase
+                .table("members")
+                .select("id,ign,job")
+                .eq("is_active", True)
+                .order("ign", ascending=True)
             )
-        )
+            members = members_response.data or []
+
+            if not members:
+                await interaction.response.send_message(
+                    "❌ No active members found.",
+                    ephemeral=True
+                )
+                return
+
+            options = []
+            for m in members[:25]:
+                label = (m.get("ign") or "Unknown")[:100]
+                job = (m.get("job") or "No job").strip()[:100]
+                options.append(
+                    discord.SelectOption(
+                        label=label,
+                        value=str(m["id"]),
+                        description=job,
+                    )
+                )
+
+            view = discord.ui.View(timeout=120)
+            view.add_item(
+                IzinMemberSelect(
+                    self.event_id,
+                    interaction.message,
+                    options,
+                )
+            )
+
+            await interaction.response.send_message(
+                "🙏 Pilih teman yang tidak bisa hadir:",
+                view=view,
+                ephemeral=True
+            )
+        except Exception as error:
+            print(f"Failed to load members for izin select: {error}")
+            await interaction.response.send_message(
+                "❌ Could not load members. Please try again.",
+                ephemeral=True
+            )
 
 
 async def create_attendance_post(channel, event_name, allow_existing=False):
