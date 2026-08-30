@@ -1003,6 +1003,123 @@ async def syncdiscord(interaction: discord.Interaction, dry_run: bool = False):
     await interaction.followup.send(summary, ephemeral=True)
 
 
+async def izin_member_autocomplete(interaction: discord.Interaction, current: str):
+    try:
+        response = await aexecute(
+            supabase
+            .table("members")
+            .select("id,ign")
+            .eq("is_active", True)
+            .order("ign")
+        )
+        members = (response.data or [])[:25]
+        target = current.strip().lower()
+        choices = [
+            app_commands.Choice(name=m["ign"], value=str(m["id"]))
+            for m in members
+            if not target or (m.get("ign") or "").lower().startswith(target)
+        ][:25]
+        return choices
+    except Exception as error:
+        print(f"Izin autocomplete error: {error}")
+        return []
+
+
+@tree.command(
+    name="izin",
+    description="Izin orang lain tidak hadir untuk event terakhir"
+)
+@app_commands.choices(event_name=[
+    app_commands.Choice(name="Guild League", value="Guild League"),
+    app_commands.Choice(name="Emperium Overrun", value="Emperium Overrun"),
+])
+@app_commands.describe(
+    event_name="Nama event",
+    member="IGN anggota",
+    reason="Alasan tidak hadir (opsional)"
+)
+@app_commands.autocomplete(member=izin_member_autocomplete)
+async def izin_command(
+    interaction: discord.Interaction,
+    event_name: str,
+    member: str,
+    reason: str = ""
+):
+    await interaction.response.defer(ephemeral=True, thinking=True)
+
+    try:
+        event_response = await aexecute(
+            supabase
+            .table("events")
+            .select("id,name,event_date,event_time,attendance_close_at")
+            .eq("name", event_name)
+            .order("event_date", desc=True)
+            .limit(1)
+        )
+        if not event_response.data:
+            await interaction.followup.send(
+                "❌ Event not found.",
+                ephemeral=True
+            )
+            return
+
+        event = event_response.data[0]
+        close_wib = parse_iso_to_wib(event["attendance_close_at"])
+
+        if close_wib and datetime.now(WIB) >= close_wib:
+            await interaction.followup.send(
+                "⏰ Attendance for this event is already closed.",
+                ephemeral=True
+            )
+            return
+
+        target_response = await aexecute(
+            supabase
+            .table("members")
+            .select("id,ign,discord_id")
+            .eq("id", int(member))
+            .limit(1)
+        )
+        if not target_response.data:
+            await interaction.followup.send(
+                "❌ Member not found.",
+                ephemeral=True
+            )
+            return
+
+        target = target_response.data[0]
+        target_id = target["id"]
+        target_discord_id = target.get("discord_id")
+        discord_user_id = (
+            str(target_discord_id)
+            if target_discord_id
+            else f"izin_{target_id}"
+        )
+
+        await aexecute(
+            supabase.table("event_attendance").upsert({
+                "event_id": event["id"],
+                "discord_user_id": discord_user_id,
+                "discord_username": target["ign"],
+                "member_id": target_id,
+                "status": "tidak_hadir",
+                "reason": reason.strip() or None,
+                "responded_at": to_utc(datetime.now(WIB)).isoformat(),
+            }, on_conflict="event_id,discord_user_id")
+        )
+
+        await interaction.followup.send(
+            f"✅ {target['ign']} tercatat tidak hadir untuk {event_name}.",
+            ephemeral=True
+        )
+    except Exception as error:
+        print(f"/izin error: {error}")
+        await interaction.followup.send(
+            "❌ Could not save the attendance. Please try again.",
+            ephemeral=True
+        )
+
+
 @tasks.loop(time=CRON_UTC)
 async def auto_attendance():
     if not ATTENDANCE_CHANNEL_ID:
