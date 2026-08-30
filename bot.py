@@ -201,7 +201,7 @@ def build_attendance_embed(event, attendance_rows):
         return "\n".join(lines)
 
     embed.add_field(name=f"✅ Hadir ({len(hadir)})", value=names(hadir), inline=True)
-    embed.add_field(name=f"❌ Tidak Hadir ({len(tidak)})", value=names(tidak, show_reason=True), inline=True)
+    embed.add_field(name=f"❌ Izin ({len(tidak)})", value=names(tidak, show_reason=True), inline=True)
 
     return embed
 
@@ -303,7 +303,7 @@ class AttendanceButton(discord.ui.Button):
 
             status_display = {
                 "hadir": "Hadir",
-                "tidak_hadir": "Tidak Hadir",
+                "tidak_hadir": "Izin",
                 "tentative": "Tentative",
             }.get(self.status, self.status)
             await interaction.followup.send(
@@ -324,11 +324,11 @@ class AttendanceView(discord.ui.View):
         super().__init__(timeout=None)
         self.event_id = event_id
         self.add_item(AttendanceButton(event_id, "hadir", "✅ Hadir", discord.ButtonStyle.green))
-        self.add_item(AttendanceButton(event_id, "tidak_hadir", "❌ Tidak Hadir", discord.ButtonStyle.red))
+        self.add_item(AttendanceButton(event_id, "tidak_hadir", "❌ Izin", discord.ButtonStyle.red))
         self.add_item(IzinOrangLainButton(event_id))
 
 
-class DeclineReasonModal(discord.ui.Modal, title="Alasan tidak hadir"):
+class DeclineReasonModal(discord.ui.Modal, title="Alasan izin"):
     reason = discord.ui.TextInput(
         label="Kenapa kamu tidak bisa hadir?",
         style=discord.TextStyle.short,
@@ -409,7 +409,7 @@ class DeclineReasonModal(discord.ui.Modal, title="Alasan tidak hadir"):
                     await self.message.edit(embed=embed)
 
             await interaction.followup.send(
-                "✅ Kamu tercatat tidak hadir.",
+                "✅ Kamu tercatat izin.",
                 ephemeral=True
             )
         except Exception as error:
@@ -420,9 +420,9 @@ class DeclineReasonModal(discord.ui.Modal, title="Alasan tidak hadir"):
             )
 
 
-class IzinOrangLainReasonModal(discord.ui.Modal, title="Izin orang lain tidak hadir"):
+class IzinOrangLainReasonModal(discord.ui.Modal, title="Izin orang lain"):
     reason = discord.ui.TextInput(
-        label="Alasan tidak hadir",
+        label="Alasan izin",
         style=discord.TextStyle.short,
         max_length=100,
         required=False,
@@ -521,7 +521,7 @@ class IzinOrangLainReasonModal(discord.ui.Modal, title="Izin orang lain tidak ha
                     await self.message.edit(embed=embed)
 
             await interaction.followup.send(
-                f"✅ {target['ign']} tercatat tidak hadir.",
+                f"✅ {target['ign']} tercatat izin.",
                 ephemeral=True
             )
         except Exception as error:
@@ -996,7 +996,7 @@ async def attendance_list(interaction: discord.Interaction, event_name: str):
             lines.append(f"- {username}")
 
         lines.append("")
-        lines.append(f"❌ Tidak Hadir ({len(tidak)})")
+        lines.append(f"❌ Izin ({len(tidak)})")
         for row in tidak:
             username = row["discord_username"] or "Unknown"
             lines.append(f"- {username}")
