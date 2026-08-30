@@ -533,9 +533,21 @@ class IzinOrangLainReasonModal(discord.ui.Modal, title="Izin orang lain tidak ha
 
 
 class IzinMemberSelect(discord.ui.Select):
-    def __init__(self, event_id: int, attendance_message: discord.Message, options: list):
+    def __init__(
+        self,
+        event_id: int,
+        attendance_message: discord.Message,
+        options: list,
+        page: int = 0,
+        total_pages: int = 1,
+    ):
+        placeholder = (
+            f"Pilih teman (page {page + 1}/{total_pages})"
+            if total_pages > 1
+            else "Pilih teman yang tidak bisa hadir"
+        )
         super().__init__(
-            placeholder="Pilih teman yang tidak bisa hadir",
+            placeholder=placeholder,
             min_values=1,
             max_values=1,
             options=options,
@@ -590,7 +602,13 @@ class IzinPaginationView(discord.ui.View):
             )
 
         self.add_item(
-            IzinMemberSelect(self.event_id, self.attendance_message, options)
+            IzinMemberSelect(
+                self.event_id,
+                self.attendance_message,
+                options,
+                page=self.page,
+                total_pages=self.total_pages,
+            )
         )
 
         if self.total_pages > 1:
