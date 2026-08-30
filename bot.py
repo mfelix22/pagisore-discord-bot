@@ -80,6 +80,21 @@ async def get_member_id(discord_id: str):
     return None
 
 
+async def get_member_by_ign(ign: str):
+    try:
+        response = await aexecute(
+            supabase.table("members").select("id,ign,discord_id")
+        )
+        if response.data:
+            target = ign.strip().lower()
+            for m in response.data:
+                if (m.get("ign") or "").strip().lower() == target:
+                    return m
+    except Exception as error:
+        print(f"Failed to resolve member by IGN {ign}: {error}")
+    return None
+
+
 def parse_iso_to_wib(value):
     if not value:
         return None
@@ -177,7 +192,7 @@ def build_attendance_embed(event, attendance_rows):
             return f"{'—': <{COL_WIDTH}}"
         lines = []
         for r in rows:
-            name = r["discord_username"] or (r.get("members") or {}).get("ign") or "Unknown"
+            name = r["discord_username"] or "Unknown"
             reason = r.get("reason")
             if show_reason and reason:
                 line = f"> {name} — *{reason}*"
@@ -279,7 +294,7 @@ class AttendanceButton(discord.ui.Button):
                     attendance_response = await aexecute(
                         supabase
                         .table("event_attendance")
-                        .select("discord_username,status,reason,member_id,members(ign)")
+                        .select("discord_username,status,reason")
                         .eq("event_id", self.event_id)
                     )
                     embed = build_attendance_embed(event, attendance_response.data or [])
@@ -313,6 +328,7 @@ class AttendanceView(discord.ui.View):
         self.add_item(AttendanceButton(event_id, "hadir", "✅ Hadir", discord.ButtonStyle.green))
         self.add_item(AttendanceButton(event_id, "tentative", "🤔 Tentative", discord.ButtonStyle.gray))
         self.add_item(AttendanceButton(event_id, "tidak_hadir", "❌ Tidak Hadir", discord.ButtonStyle.red))
+        self.add_item(IzinOrangLainButton(event_id))
 
 
 class DeclineReasonModal(discord.ui.Modal, title="Alasan tidak hadir"):
@@ -388,7 +404,7 @@ class DeclineReasonModal(discord.ui.Modal, title="Alasan tidak hadir"):
                 attendance_response = await aexecute(
                     supabase
                     .table("event_attendance")
-                    .select("discord_username,status,reason,member_id,members(ign)")
+                    .select("discord_username,status,reason")
                     .eq("event_id", self.event_id)
                 )
                 embed = build_attendance_embed(event, attendance_response.data or [])
@@ -405,6 +421,135 @@ class DeclineReasonModal(discord.ui.Modal, title="Alasan tidak hadir"):
                 "❌ Could not save your attendance. Please try again.",
                 ephemeral=True
             )
+
+
+class IzinOrangLainModal(discord.ui.Modal, title="Izin orang lain tidak hadir"):
+    target_ign = discord.ui.TextInput(
+        label="IGN teman yang tidak bisa hadir",
+        style=discord.TextStyle.short,
+        max_length=100,
+        required=True,
+        placeholder="contoh: Aime",
+    )
+    reason = discord.ui.TextInput(
+        label="Alasan tidak hadir",
+        style=discord.TextStyle.short,
+        max_length=100,
+        required=False,
+        placeholder="contoh: kereta/izin",
+    )
+
+    def __init__(self, event_id: int, message: discord.Message):
+        super().__init__()
+        self.event_id = event_id
+        self.message = message
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
+        try:
+            now_wib = datetime.now(WIB)
+
+            event_response = await aexecute(
+                supabase
+                .table("events")
+                .select("attendance_close_at")
+                .eq("id", self.event_id)
+            )
+
+            if not event_response.data:
+                await interaction.followup.send(
+                    "❌ Could not find this event.",
+                    ephemeral=True
+                )
+                return
+
+            close_wib = parse_iso_to_wib(event_response.data[0]["attendance_close_at"])
+
+            if close_wib and now_wib >= close_wib:
+                await interaction.followup.send(
+                    "⏰ Attendance for this event is already closed.",
+                    ephemeral=True
+                )
+                return
+
+            target = await get_member_by_ign(str(self.target_ign.value))
+
+            if not target:
+                await interaction.followup.send(
+                    "❌ Member not found. Cek lagi IGN-nya.",
+                    ephemeral=True
+                )
+                return
+
+            target_id = target["id"]
+            target_discord_id = target.get("discord_id")
+            # Use the real Discord ID as the key if available; otherwise a synthetic key.
+            discord_user_id = (
+                str(target_discord_id)
+                if target_discord_id
+                else f"izin_{target_id}"
+            )
+
+            await aexecute(
+                supabase.table("event_attendance").upsert({
+                    "event_id": self.event_id,
+                    "discord_user_id": discord_user_id,
+                    "discord_username": target["ign"],
+                    "member_id": target_id,
+                    "status": "tidak_hadir",
+                    "reason": self.reason.value or None,
+                    "responded_at": to_utc(datetime.now(WIB)).isoformat(),
+                }, on_conflict="event_id,discord_user_id")
+            )
+
+            event_response = await aexecute(
+                supabase
+                .table("events")
+                .select("name,event_date,event_time,attendance_close_at")
+                .eq("id", self.event_id)
+                .limit(1)
+            )
+            if event_response.data:
+                event = event_response.data[0]
+                attendance_response = await aexecute(
+                    supabase
+                    .table("event_attendance")
+                    .select("discord_username,status,reason")
+                    .eq("event_id", self.event_id)
+                )
+                embed = build_attendance_embed(event, attendance_response.data or [])
+                if self.message:
+                    await self.message.edit(embed=embed)
+
+            await interaction.followup.send(
+                f"✅ {target['ign']} tercatat tidak hadir.",
+                ephemeral=True
+            )
+        except Exception as error:
+            print(f"Supabase error in izin orang lain modal: {error}")
+            await interaction.followup.send(
+                "❌ Could not save the attendance. Please try again.",
+                ephemeral=True
+            )
+
+
+class IzinOrangLainButton(discord.ui.Button):
+    def __init__(self, event_id: int):
+        super().__init__(
+            label="🙏 Izinin orang lain",
+            style=discord.ButtonStyle.blurple,
+            custom_id=f"pagisore_attendance_izin_{event_id}"
+        )
+        self.event_id = event_id
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(
+            IzinOrangLainModal(
+                event_id=self.event_id,
+                message=interaction.message,
+            )
+        )
 
 
 async def create_attendance_post(channel, event_name, allow_existing=False):
