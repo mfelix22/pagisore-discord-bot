@@ -103,6 +103,43 @@ def format_wib_datetime(dt):
     return dt.strftime("%d %B %Y %H:%M")
 
 
+DEFAULT_ATTENDANCE_CONTENT = {
+    "Emperium Overrun": (
+        "Halo semuanya (IZINNYA YA @everyone ) ini list party buat Emperium Overrun malam ini,\n"
+        "kalo gak bisa ikut tolong kabarin di {attendance_channel}\n"
+        "NOTE: slot masih bisa berubah, jangan lupa cek in game sebelum EO dimulai\n\n"
+        "thankyouu"
+    ),
+    "Guild League": (
+        "Halo semuanya (IZINNYA YA @everyone ) ini list party buat Guild League malam ini,\n"
+        "kalo gak bisa ikut tolong kabarin di {attendance_channel}\n"
+        "NOTE: slot masih bisa berubah, jangan lupa cek in game sebelum GL dimulai\n\n"
+        "thankyouu"
+    ),
+}
+
+
+async def get_attendance_content(event_name: str, attendance_channel: str):
+    default = DEFAULT_ATTENDANCE_CONTENT.get(
+        event_name,
+        "Halo semuanya (IZINNYA YA @everyone ) kabarin kalo gak bisa ikut.\n\nthankyouu",
+    ).replace("{attendance_channel}", attendance_channel)
+
+    try:
+        response = await aexecute(
+            supabase
+            .table("attendance_templates")
+            .select("content")
+            .eq("event_name", event_name)
+            .limit(1)
+        )
+        if response.data:
+            return response.data[0]["content"].replace("{attendance_channel}", attendance_channel)
+    except Exception as error:
+        print(f"Failed to load attendance template for {event_name}: {error}")
+    return default
+
+
 def build_attendance_embed(event, attendance_rows):
     event_name = event.get("name", "Event")
     event_date = event.get("event_date")
@@ -429,20 +466,7 @@ async def create_attendance_post(channel, event_name, allow_existing=False):
     embed = build_attendance_embed(event_row, [])
 
     attendance_channel = f"<#{ATTENDANCE_CHANNEL_ID}>" if ATTENDANCE_CHANNEL_ID else "absensi-guild-event"
-    if event_name == "Emperium Overrun":
-        content = (
-            "Halo semuanya (IZINNYA YA @everyone ) ini list party buat Emperium Overrun malam ini,\n"
-            f"kalo gak bisa ikut tolong kabarin di {attendance_channel}\n"
-            "NOTE: slot masih bisa berubah, jangan lupa cek in game sebelum EO dimulai\n\n"
-            "thankyouu"
-        )
-    else:
-        content = (
-            "Halo semuanya (IZINNYA YA @everyone ) ini list party buat Guild League malam ini,\n"
-            f"kalo gak bisa ikut tolong kabarin di {attendance_channel}\n"
-            "NOTE: slot masih bisa berubah, jangan lupa cek in game sebelum GL dimulai\n\n"
-            "thankyouu"
-        )
+    content = await get_attendance_content(event_name, attendance_channel)
 
     await channel.send(
         content,
