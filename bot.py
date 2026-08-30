@@ -570,7 +570,7 @@ class IzinOrangLainButton(discord.ui.Button):
                 .table("members")
                 .select("id,ign,job")
                 .eq("is_active", True)
-                .order("ign", ascending=True)
+                .order("ign")
             )
             members = members_response.data or []
 
