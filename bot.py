@@ -532,6 +532,70 @@ class IzinOrangLainReasonModal(discord.ui.Modal, title="Izin orang lain tidak ha
             )
 
 
+class IzinSearchModal(discord.ui.Modal, title="Cari anggota"):
+    target_ign = discord.ui.TextInput(
+        label="Ketik awalan IGN",
+        style=discord.TextStyle.short,
+        max_length=50,
+        required=False,
+        placeholder="contoh: Ai (kosong untuk semua)",
+    )
+
+    def __init__(self, event_id: int, message: discord.Message):
+        super().__init__()
+        self.event_id = event_id
+        self.message = message
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
+        try:
+            members_response = await aexecute(
+                supabase
+                .table("members")
+                .select("id,ign,job")
+                .eq("is_active", True)
+                .order("ign")
+            )
+            members = members_response.data or []
+
+            prefix = str(self.target_ign.value or "").strip().lower()
+            if prefix:
+                members = [
+                    m
+                    for m in members
+                    if (m.get("ign") or "").lower().startswith(prefix)
+                ]
+
+            if not members:
+                await interaction.followup.send(
+                    "❌ No matching active members found.",
+                    ephemeral=True
+                )
+                return
+
+            view = IzinPaginationView(
+                self.event_id,
+                self.message,
+                members,
+                0,
+            )
+
+            total = len(members)
+            page_info = f" ({view.total_pages} page{'s' if view.total_pages > 1 else ''})" if total > 25 else ""
+            await interaction.followup.send(
+                f"🙏 {total} anggota ditemukan{page_info}. Pilih dari dropdown:",
+                view=view,
+                ephemeral=True
+            )
+        except Exception as error:
+            print(f"Failed to search members for izin: {error}")
+            await interaction.followup.send(
+                "❌ Could not load members. Please try again.",
+                ephemeral=True
+            )
+
+
 class IzinMemberSelect(discord.ui.Select):
     def __init__(
         self,
@@ -659,41 +723,12 @@ class IzinOrangLainButton(discord.ui.Button):
         self.event_id = event_id
 
     async def callback(self, interaction: discord.Interaction):
-        try:
-            members_response = await aexecute(
-                supabase
-                .table("members")
-                .select("id,ign,job")
-                .eq("is_active", True)
-                .order("ign")
+        await interaction.response.send_modal(
+            IzinSearchModal(
+                event_id=self.event_id,
+                message=interaction.message,
             )
-            members = members_response.data or []
-
-            if not members:
-                await interaction.response.send_message(
-                    "❌ No active members found.",
-                    ephemeral=True
-                )
-                return
-
-            view = IzinPaginationView(
-                self.event_id,
-                interaction.message,
-                members,
-                0,
-            )
-
-            await interaction.response.send_message(
-                f"🙏 Pilih teman yang tidak bisa hadir (page 1/{view.total_pages}):",
-                view=view,
-                ephemeral=True
-            )
-        except Exception as error:
-            print(f"Failed to load members for izin select: {error}")
-            await interaction.response.send_message(
-                "❌ Could not load members. Please try again.",
-                ephemeral=True
-            )
+        )
 
 
 async def create_attendance_post(channel, event_name, allow_existing=False):
