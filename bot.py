@@ -48,7 +48,7 @@ publish_api.init(client, supabase, EO_PARTY_CHANNEL_ID, PAGISORE_BOT_API_SECRET)
 WIB = timezone(timedelta(hours=7))
 EVENT_TIME = time(19, 55, tzinfo=WIB)  # temporary test time, set back to time(23, 59) later
 # EVENT_TIME = time(19, 55, tzinfo=WIB)
-CLOSE_OFFSET = timedelta(hours=3)  # temporary test, set back to timedelta(hours=3)(minutes=1) later
+CLOSE_OFFSET = timedelta(minutes=5)  # temporary test, set back to timedelta(hours=3)(minutes=1) later
 CRON_UTC = time(23, 0, tzinfo=timezone.utc)  # 06:00 WIB
 
 
@@ -177,7 +177,7 @@ def build_attendance_embed(event, attendance_rows):
             return f"{'—': <{COL_WIDTH}}"
         lines = []
         for r in rows:
-            name = r["discord_username"] or "Unknown"
+            name = r["discord_username"] or (r.get("members") or {}).get("ign") or "Unknown"
             reason = r.get("reason")
             if show_reason and reason:
                 line = f"> {name} — *{reason}*"
@@ -279,7 +279,7 @@ class AttendanceButton(discord.ui.Button):
                     attendance_response = await aexecute(
                         supabase
                         .table("event_attendance")
-                        .select("discord_username,status,reason")
+                        .select("discord_username,status,reason,member_id,members(ign)")
                         .eq("event_id", self.event_id)
                     )
                     embed = build_attendance_embed(event, attendance_response.data or [])
@@ -388,7 +388,7 @@ class DeclineReasonModal(discord.ui.Modal, title="Alasan tidak hadir"):
                 attendance_response = await aexecute(
                     supabase
                     .table("event_attendance")
-                    .select("discord_username,status,reason")
+                    .select("discord_username,status,reason,member_id,members(ign)")
                     .eq("event_id", self.event_id)
                 )
                 embed = build_attendance_embed(event, attendance_response.data or [])
