@@ -554,6 +554,83 @@ class IzinMemberSelect(discord.ui.Select):
         )
 
 
+class IzinPaginationView(discord.ui.View):
+    def __init__(
+        self,
+        event_id: int,
+        attendance_message: discord.Message,
+        members: list,
+        page: int = 0,
+    ):
+        super().__init__(timeout=120)
+        self.event_id = event_id
+        self.attendance_message = attendance_message
+        self.members = members
+        self.page = page
+        self.per_page = 25
+        self.total_pages = (len(members) + self.per_page - 1) // self.per_page
+        self._build_items()
+
+    def _build_items(self):
+        self.clear_items()
+        start = self.page * self.per_page
+        end = start + self.per_page
+        page_members = self.members[start:end]
+
+        options = []
+        for m in page_members:
+            label = (m.get("ign") or "Unknown")[:100]
+            job = (m.get("job") or "No job").strip()[:100]
+            options.append(
+                discord.SelectOption(
+                    label=label,
+                    value=str(m["id"]),
+                    description=job,
+                )
+            )
+
+        self.add_item(
+            IzinMemberSelect(self.event_id, self.attendance_message, options)
+        )
+
+        if self.total_pages > 1:
+            prev_btn = discord.ui.Button(
+                label="⬅ Prev",
+                style=discord.ButtonStyle.gray,
+                custom_id=f"pagisore_izin_prev_{self.event_id}_{self.page}",
+                disabled=self.page == 0,
+            )
+            prev_btn.callback = self._prev
+            self.add_item(prev_btn)
+
+            next_btn = discord.ui.Button(
+                label="Next ➡",
+                style=discord.ButtonStyle.gray,
+                custom_id=f"pagisore_izin_next_{self.event_id}_{self.page}",
+                disabled=self.page >= self.total_pages - 1,
+            )
+            next_btn.callback = self._next
+            self.add_item(next_btn)
+
+    async def _prev(self, interaction: discord.Interaction):
+        new_view = IzinPaginationView(
+            self.event_id,
+            self.attendance_message,
+            self.members,
+            self.page - 1,
+        )
+        await interaction.response.edit_message(view=new_view)
+
+    async def _next(self, interaction: discord.Interaction):
+        new_view = IzinPaginationView(
+            self.event_id,
+            self.attendance_message,
+            self.members,
+            self.page + 1,
+        )
+        await interaction.response.edit_message(view=new_view)
+
+
 class IzinOrangLainButton(discord.ui.Button):
     def __init__(self, event_id: int):
         super().__init__(
@@ -581,29 +658,15 @@ class IzinOrangLainButton(discord.ui.Button):
                 )
                 return
 
-            options = []
-            for m in members[:25]:
-                label = (m.get("ign") or "Unknown")[:100]
-                job = (m.get("job") or "No job").strip()[:100]
-                options.append(
-                    discord.SelectOption(
-                        label=label,
-                        value=str(m["id"]),
-                        description=job,
-                    )
-                )
-
-            view = discord.ui.View(timeout=120)
-            view.add_item(
-                IzinMemberSelect(
-                    self.event_id,
-                    interaction.message,
-                    options,
-                )
+            view = IzinPaginationView(
+                self.event_id,
+                interaction.message,
+                members,
+                0,
             )
 
             await interaction.response.send_message(
-                "🙏 Pilih teman yang tidak bisa hadir:",
+                f"🙏 Pilih teman yang tidak bisa hadir (page 1/{view.total_pages}):",
                 view=view,
                 ephemeral=True
             )
@@ -1001,123 +1064,6 @@ async def syncdiscord(interaction: discord.Interaction, dry_run: bool = False):
         summary += f"\nNot found examples: {preview}"
 
     await interaction.followup.send(summary, ephemeral=True)
-
-
-async def izin_member_autocomplete(interaction: discord.Interaction, current: str):
-    try:
-        response = await aexecute(
-            supabase
-            .table("members")
-            .select("id,ign")
-            .eq("is_active", True)
-            .order("ign")
-        )
-        members = (response.data or [])[:25]
-        target = current.strip().lower()
-        choices = [
-            app_commands.Choice(name=m["ign"], value=str(m["id"]))
-            for m in members
-            if not target or (m.get("ign") or "").lower().startswith(target)
-        ][:25]
-        return choices
-    except Exception as error:
-        print(f"Izin autocomplete error: {error}")
-        return []
-
-
-@tree.command(
-    name="izin",
-    description="Izin orang lain tidak hadir untuk event terakhir"
-)
-@app_commands.choices(event_name=[
-    app_commands.Choice(name="Guild League", value="Guild League"),
-    app_commands.Choice(name="Emperium Overrun", value="Emperium Overrun"),
-])
-@app_commands.describe(
-    event_name="Nama event",
-    member="IGN anggota",
-    reason="Alasan tidak hadir (opsional)"
-)
-@app_commands.autocomplete(member=izin_member_autocomplete)
-async def izin_command(
-    interaction: discord.Interaction,
-    event_name: str,
-    member: str,
-    reason: str = ""
-):
-    await interaction.response.defer(ephemeral=True, thinking=True)
-
-    try:
-        event_response = await aexecute(
-            supabase
-            .table("events")
-            .select("id,name,event_date,event_time,attendance_close_at")
-            .eq("name", event_name)
-            .order("event_date", desc=True)
-            .limit(1)
-        )
-        if not event_response.data:
-            await interaction.followup.send(
-                "❌ Event not found.",
-                ephemeral=True
-            )
-            return
-
-        event = event_response.data[0]
-        close_wib = parse_iso_to_wib(event["attendance_close_at"])
-
-        if close_wib and datetime.now(WIB) >= close_wib:
-            await interaction.followup.send(
-                "⏰ Attendance for this event is already closed.",
-                ephemeral=True
-            )
-            return
-
-        target_response = await aexecute(
-            supabase
-            .table("members")
-            .select("id,ign,discord_id")
-            .eq("id", int(member))
-            .limit(1)
-        )
-        if not target_response.data:
-            await interaction.followup.send(
-                "❌ Member not found.",
-                ephemeral=True
-            )
-            return
-
-        target = target_response.data[0]
-        target_id = target["id"]
-        target_discord_id = target.get("discord_id")
-        discord_user_id = (
-            str(target_discord_id)
-            if target_discord_id
-            else f"izin_{target_id}"
-        )
-
-        await aexecute(
-            supabase.table("event_attendance").upsert({
-                "event_id": event["id"],
-                "discord_user_id": discord_user_id,
-                "discord_username": target["ign"],
-                "member_id": target_id,
-                "status": "tidak_hadir",
-                "reason": reason.strip() or None,
-                "responded_at": to_utc(datetime.now(WIB)).isoformat(),
-            }, on_conflict="event_id,discord_user_id")
-        )
-
-        await interaction.followup.send(
-            f"✅ {target['ign']} tercatat tidak hadir untuk {event_name}.",
-            ephemeral=True
-        )
-    except Exception as error:
-        print(f"/izin error: {error}")
-        await interaction.followup.send(
-            "❌ Could not save the attendance. Please try again.",
-            ephemeral=True
-        )
 
 
 @tasks.loop(time=CRON_UTC)
