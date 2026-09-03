@@ -490,7 +490,7 @@ class IzinOrangLainReasonModal(discord.ui.Modal, title="Izin orang lain"):
                 else f"izin_{target_id}"
             )
 
-            await aexecute(
+            upsert_response = await aexecute(
                 supabase.table("event_attendance").upsert({
                     "event_id": self.event_id,
                     "discord_user_id": discord_user_id,
@@ -499,8 +499,11 @@ class IzinOrangLainReasonModal(discord.ui.Modal, title="Izin orang lain"):
                     "status": "izin",
                     "reason": self.reason.value or None,
                     "responded_at": to_utc(datetime.now(WIB)).isoformat(),
-                }, on_conflict="event_id,discord_user_id")
+                }, on_conflict="member_id,event_id")
             )
+
+            if getattr(upsert_response, "error", None):
+                raise Exception(f"Upsert failed: {upsert_response.error}")
 
             event_response = await aexecute(
                 supabase
