@@ -496,7 +496,7 @@ class IzinOrangLainReasonModal(discord.ui.Modal, title="Izin orang lain"):
                     "discord_user_id": discord_user_id,
                     "discord_username": target["ign"],
                     "member_id": target_id,
-                    "status": "tidak_hadir",
+                    "status": "izin",
                     "reason": self.reason.value or None,
                     "responded_at": to_utc(datetime.now(WIB)).isoformat(),
                 }, on_conflict="event_id,discord_user_id")
